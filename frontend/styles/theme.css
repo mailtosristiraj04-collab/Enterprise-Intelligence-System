@@ -1,0 +1,20 @@
+:root {
+  --navy: #18324b;
+  --teal: #4f8582;
+  --charcoal: #27333d;
+  --muted: #6f7c86;
+  --border: #dce3e7;
+  --surface: #ffffff;
+  --background: #f5f6f4;
+}
+
+.stApp { background: var(--background); color: var(--charcoal); }
+.block-container { max-width: 1180px; padding-top: 2rem; }
+[data-testid="stSidebar"] { background: var(--navy); }
+[data-testid="stSidebar"] * { color: #f5f7f8 !important; }
+.eki-brand { color: var(--navy); font-size: 2rem; font-weight: 700; letter-spacing: -0.02em; }
+.eki-subtitle { color: var(--muted); margin-top: -0.6rem; }
+.eki-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem; }
+.eki-kicker { color: var(--teal); font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+.eki-answer { background: var(--surface); border-left: 4px solid var(--teal); border-radius: 8px; padding: 1rem 1.2rem; }
+.eki-warning { background: #fff8e8; border: 1px solid #e8d39b; border-radius: 8px; padding: .9rem 1rem; }
