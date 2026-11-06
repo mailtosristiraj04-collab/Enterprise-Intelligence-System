@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # Retrieval
     retrieval_top_k: int = 15
     rerank_top_k: int = 5
+    rrf_constant: int = 60
+    bm25_index_filename: str = "chunks.bm25.json"
+    rerank_candidate_count: int = 30
 
     # Hybrid Search
     hybrid_search_enabled: bool = True

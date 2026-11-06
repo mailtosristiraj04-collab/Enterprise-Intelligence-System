@@ -11,6 +11,7 @@ from backend.core.exceptions import DocumentNotFoundError, DuplicateDocumentErro
 from backend.database.models import Chunk, Document, ProcessingStatus
 from backend.embeddings.service import EmbeddingService
 from backend.vectorstore.faiss_store import FaissVectorStore
+from backend.retrieval.bm25 import BM25Retriever
 from backend.ingestion.chunking import chunk_pages
 from backend.ingestion.extractors import get_extractor
 from backend.ingestion.preprocessing import clean_text
@@ -124,6 +125,9 @@ class IngestionService:
             document.status = ProcessingStatus.COMPLETED.value
             session.commit()
             session.refresh(document)
+            BM25Retriever(
+                self.settings.get_vectorstore_path() / self.settings.bm25_index_filename
+            ).rebuild(session)
             return document
         except Exception as exc:
             session.rollback()
@@ -151,3 +155,6 @@ class IngestionService:
         session.delete(document)
         session.commit()
         path.unlink(missing_ok=True)
+        BM25Retriever(
+            self.settings.get_vectorstore_path() / self.settings.bm25_index_filename
+        ).rebuild(session)
