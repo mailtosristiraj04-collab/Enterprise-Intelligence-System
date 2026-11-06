@@ -39,7 +39,7 @@ def run_evaluation(
             detail="dataset_path must remain inside the evaluation dataset directory.",
         )
     try:
-        dataset = EvaluationDataset.load(path)
+        dataset = EvaluationDataset.load(path, session)
         report = runner.run(
             session,
             dataset,

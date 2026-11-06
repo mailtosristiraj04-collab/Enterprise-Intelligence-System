@@ -6,6 +6,10 @@ Evaluation data is JSONL and is separate from production uploads. The default
 file is `data/evaluation/dataset.jsonl`; it is intentionally empty until
 questions and labels are manually verified against source documents.
 
+See [DATASET_PREPARATION.md](./DATASET_PREPARATION.md) for the complete
+30–50-question preparation workflow, database ID inspection command, review
+checklist, and category-specific templates.
+
 Each non-comment line must contain:
 
 ```json
@@ -20,8 +24,10 @@ Each non-comment line must contain:
 }
 ```
 
-Sufficient samples must have relevance labels. Insufficient-context samples
-may omit them. LLM-generated answers are not accepted as ground truth.
+Sufficient samples must have manually written reference answers plus relevance
+labels that exist in the current SQLite database. Insufficient-context samples
+must omit answer and relevance labels and set `sufficient_evidence` to `false`.
+LLM-generated answers are not accepted as ground truth.
 
 ## Retrieval metrics
 

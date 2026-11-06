@@ -3,7 +3,10 @@
 import json
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 
+from backend.database.models import Base, Chunk, Document
 from backend.evaluation.dataset import DatasetValidationError, EvaluationDataset
 from backend.evaluation.metrics import (
     mean_reciprocal_rank,
@@ -73,3 +76,110 @@ def test_dataset_rejects_missing_ground_truth(payload, tmp_path) -> None:
     path.write_text(json.dumps(payload), encoding="utf-8")
     with pytest.raises(DatasetValidationError):
         EvaluationDataset.load(path)
+
+
+def _evaluation_session() -> Session:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    session.add(
+        Document(
+            id="doc-real",
+            filename="policy.txt",
+            original_filename="policy.txt",
+            file_type=".txt",
+            file_size=10,
+            file_hash="a" * 64,
+            stored_file_path="",
+        )
+    )
+    session.add(
+        Chunk(
+            id="chunk-real",
+            document_id="doc-real",
+            chunk_index=0,
+            text="The policy requires seven years.",
+            page_number=1,
+            char_count=34,
+            token_estimate=6,
+        )
+    )
+    session.add(
+        Document(
+            id="doc-other",
+            filename="other.txt",
+            original_filename="other.txt",
+            file_type=".txt",
+            file_size=10,
+            file_hash="b" * 64,
+            stored_file_path="",
+        )
+    )
+    session.add(
+        Chunk(
+            id="chunk-other",
+            document_id="doc-other",
+            chunk_index=0,
+            text="Unrelated content.",
+            page_number=1,
+            char_count=18,
+            token_estimate=2,
+        )
+    )
+    session.commit()
+    return session
+
+
+def _write_sample(tmp_path, **overrides):
+    sample = {
+        "question": "How long is the retention period?",
+        "reference_answer": "Seven years.",
+        "relevant_document_ids": ["doc-real"],
+        "relevant_chunk_ids": ["chunk-real"],
+        "expected_pages": [1],
+        "category": "direct_factual",
+        "sufficient_evidence": True,
+    }
+    sample.update(overrides)
+    path = tmp_path / "references.jsonl"
+    path.write_text(json.dumps(sample), encoding="utf-8")
+    return path
+
+
+def test_dataset_validates_references_against_database(tmp_path) -> None:
+    session = _evaluation_session()
+    try:
+        dataset = EvaluationDataset.load(_write_sample(tmp_path), session)
+        assert dataset.samples[0].relevant_chunk_ids == {"chunk-real"}
+    finally:
+        session.close()
+
+
+@pytest.mark.parametrize(
+    "overrides, message",
+    [
+        ({"relevant_document_ids": ["missing"]}, "missing document"),
+        ({"relevant_chunk_ids": ["missing"]}, "missing chunk"),
+        ({"relevant_chunk_ids": ["chunk-other"]}, "do not match"),
+        ({"expected_pages": [9]}, "expected pages"),
+    ],
+)
+def test_dataset_rejects_invalid_database_references(tmp_path, overrides, message) -> None:
+    session = _evaluation_session()
+    try:
+        with pytest.raises(DatasetValidationError, match=message):
+            EvaluationDataset.load(_write_sample(tmp_path, **overrides), session)
+    finally:
+        session.close()
+
+
+def test_dataset_rejects_labels_on_insufficient_sample(tmp_path) -> None:
+    with pytest.raises(DatasetValidationError, match="must not contain"):
+        EvaluationDataset.load(
+            _write_sample(
+                tmp_path,
+                reference_answer="This should not be supplied.",
+                category="insufficient",
+                sufficient_evidence=False,
+            )
+        )
