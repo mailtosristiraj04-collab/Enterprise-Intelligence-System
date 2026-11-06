@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_dimension: int = 384
     embedding_batch_size: int = 64
+    embedding_device: str = "cpu"
+    vector_index_filename: str = "chunks.faiss"
+    vector_mapping_filename: str = "chunks.mapping.json"
 
     # Reranker
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"

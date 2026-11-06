@@ -2,7 +2,7 @@
 
 from typing import Generator
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, Session
 
 from backend.core.config import get_settings
@@ -45,7 +45,28 @@ class Database:
     def create_tables(self) -> None:
         """Create all database tables."""
         Base.metadata.create_all(bind=self.engine)
+        self._migrate_phase_two_schema()
         logger.info("database_tables_created")
+
+    def _migrate_phase_two_schema(self) -> None:
+        """Add Phase 3 columns when opening a database created by Phase 2."""
+        required_columns = {
+            "documents": {
+                "stored_file_path": "VARCHAR(1024) NOT NULL DEFAULT ''",
+                "metadata_json": "TEXT",
+                "extraction_warnings_json": "TEXT",
+            },
+            "chunks": {"metadata_json": "TEXT"},
+        }
+        inspector = inspect(self.engine)
+        with self.engine.begin() as connection:
+            for table, columns in required_columns.items():
+                existing = {column["name"] for column in inspector.get_columns(table)}
+                for name, definition in columns.items():
+                    if name not in existing:
+                        connection.execute(
+                            text(f'ALTER TABLE "{table}" ADD COLUMN "{name}" {definition}')
+                        )
 
     def get_session(self) -> Session:
         """Get a new database session."""

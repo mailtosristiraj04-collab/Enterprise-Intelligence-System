@@ -60,4 +60,4 @@ def get_document_status(document_id: str, session: Session = Depends(get_db_sess
 
 @router.delete("/{document_id}", status_code=204)
 def delete_document(document_id: str, session: Session = Depends(get_db_session)) -> None:
-    IngestionService.delete(session, document_id)
+    IngestionService(get_settings()).delete(session, document_id)

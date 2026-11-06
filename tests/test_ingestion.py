@@ -17,6 +17,18 @@ from backend.ingestion.preprocessing import clean_text
 from backend.ingestion.service import IngestionService
 
 
+class FakeEmbeddingService:
+    def __init__(self, dimension: int = 384):
+        self.dimension = dimension
+
+    def embed_documents(self, texts: list[str]):
+        import numpy as np
+
+        vectors = np.zeros((len(texts), self.dimension), dtype=np.float32)
+        vectors[:, 0] = 1.0
+        return vectors
+
+
 def _pdf_bytes() -> bytes:
     document = fitz.open()
     page = document.new_page()
@@ -97,7 +109,10 @@ def test_ingestion_persists_chunks_and_deletion_removes_file(tmp_path: Path) -> 
     database = _test_database(settings)
     session = database.get_session()
     try:
-        service = IngestionService(settings)
+        vector_store = __import__(
+            "backend.vectorstore.faiss_store", fromlist=["FaissVectorStore"]
+        ).FaissVectorStore(settings.get_vectorstore_path(), settings.embedding_dimension)
+        service = IngestionService(settings, FakeEmbeddingService(settings.embedding_dimension), vector_store)
         document = service.ingest(session, "sample.txt", b"first paragraph.\n\nsecond paragraph.")
         stored_path = Path(document.stored_file_path)
         assert session.query(Chunk).filter_by(document_id=document.id).count() > 0
@@ -114,6 +129,10 @@ def test_api_upload_duplicate_and_missing_document(tmp_path: Path, monkeypatch: 
     database = _test_database(settings)
     monkeypatch.setattr("backend.database.database._db", database)
     monkeypatch.setattr("backend.api.documents.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "backend.ingestion.service.EmbeddingService",
+        lambda **kwargs: FakeEmbeddingService(settings.embedding_dimension),
+    )
     with TestClient(create_app()) as client:
         response = client.post("/documents/upload", files={"file": ("sample.txt", b"hello", "text/plain")})
         duplicate = client.post("/documents/upload", files={"file": ("again.txt", b"hello", "text/plain")})
