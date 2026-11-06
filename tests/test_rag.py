@@ -100,6 +100,22 @@ def test_gemini_service_reuses_client_and_returns_text():
     assert client.models.calls[0]["model"] == "gemini-test"
 
 
+def test_gemini_service_preserves_sanitized_provider_diagnostics():
+    class ProviderError(Exception):
+        status_code = 401
+
+        def __str__(self):
+            return "invalid API key=secret-value"
+
+    client = FakeClient(error=ProviderError())
+    with pytest.raises(LLMError, match=r"HTTP status 401"):
+        GeminiService("secret", "model", client=client, max_retries=0).generate("s", "p")
+    with pytest.raises(LLMError) as raised:
+        GeminiService("secret", "model", client=client, max_retries=0).generate("s", "p")
+    assert "secret-value" not in str(raised.value)
+    assert "HTTP status 401" in str(raised.value)
+
+
 def test_gemini_service_handles_empty_response_and_timeout():
     empty_client = FakeClient(response=type("Response", (), {"text": ""})())
     with pytest.raises(LLMError):

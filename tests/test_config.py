@@ -1,6 +1,21 @@
 from pathlib import Path
 
-from backend.core.config import Settings
+import pytest
+
+from backend.core.config import DEFAULT_GEMINI_MODEL, Settings
+
+
+def test_default_gemini_model_is_current() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.gemini_model == DEFAULT_GEMINI_MODEL == "gemini-3.8-flash"
+
+
+def test_obsolete_gemini_override_is_replaced() -> None:
+    with pytest.warns(UserWarning, match="obsolete model"):
+        settings = Settings(_env_file=None, gemini_model="gemini-2.0-flash")
+
+    assert settings.gemini_model == DEFAULT_GEMINI_MODEL
 
 
 def test_settings_resolve_paths(tmp_path: Path) -> None:

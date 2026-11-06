@@ -2,8 +2,14 @@
 
 from functools import lru_cache
 from pathlib import Path
+import warnings
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+OBSOLETE_GEMINI_MODELS = frozenset({"gemini-2.0-flash"})
 
 
 class Settings(BaseSettings):
@@ -21,7 +27,7 @@ class Settings(BaseSettings):
 
     # Gemini API
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
+    gemini_model: str = DEFAULT_GEMINI_MODEL
     gemini_temperature: float = 0.2
     gemini_max_output_tokens: int = 2048
     gemini_timeout_seconds: float = 30.0
@@ -86,6 +92,19 @@ class Settings(BaseSettings):
 
     # Evaluation
     evaluation_dataset_path: str = "data/evaluation/dataset.jsonl"
+
+    @model_validator(mode="after")
+    def replace_obsolete_gemini_model(self) -> "Settings":
+        """Prevent a legacy environment override from remaining active."""
+        if self.gemini_model in OBSOLETE_GEMINI_MODELS:
+            warnings.warn(
+                "GEMINI_MODEL is set to an obsolete model; using "
+                f"{DEFAULT_GEMINI_MODEL}. Update the root .env file.",
+                UserWarning,
+                stacklevel=2,
+            )
+            self.gemini_model = DEFAULT_GEMINI_MODEL
+        return self
 
     @property
     def max_file_size_bytes(self) -> int:

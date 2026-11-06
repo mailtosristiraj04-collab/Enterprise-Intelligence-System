@@ -3,10 +3,28 @@
 from __future__ import annotations
 
 import time
+import re
 from threading import RLock
 from typing import Any
 
 from backend.core.exceptions import LLMError, LLMRateLimitError, LLMTimeoutError
+
+
+def _provider_diagnostic(error: BaseException) -> str:
+    """Return sanitized provider diagnostics without credentials or payloads."""
+    status_code = (
+        getattr(error, "status_code", None)
+        or getattr(error, "code", None)
+        or getattr(getattr(error, "response", None), "status_code", None)
+    )
+    message = str(error).strip() or type(error).__name__
+    message = re.sub(r"(?i)(authorization|x-goog-api-key|api[-_ ]?key)\s*[:=]\s*\S+", r"\1=[REDACTED]", message)
+    message = re.sub(r"(?i)bearer\s+\S+", "Bearer [REDACTED]", message)
+    message = re.sub(r"(?i)(key|token|secret)=\S+", r"\1=[REDACTED]", message)
+    message = " ".join(message.split())
+    if len(message) > 240:
+        message = f"{message[:237]}..."
+    return f"HTTP status {status_code}: {message}" if status_code else message
 
 
 class GeminiService:
@@ -47,7 +65,10 @@ class GeminiService:
                         http_options=types.HttpOptions(timeout=int(self.timeout_seconds * 1000)),
                     )
                 except Exception as exc:
-                    raise LLMError("Unable to initialize the Gemini client.") from exc
+                    diagnostic = _provider_diagnostic(exc)
+                    raise LLMError(
+                        f"Unable to initialize the Gemini client. {diagnostic}"
+                    ) from exc
             return self._client
 
     def generate(self, system_instruction: str, prompt: str) -> str:
@@ -79,13 +100,15 @@ class GeminiService:
                 raise
             except TimeoutError as exc:
                 if attempt >= self.max_retries:
-                    raise LLMTimeoutError() from exc
+                    raise LLMTimeoutError(_provider_diagnostic(exc)) from exc
             except Exception as exc:
                 status_code = getattr(exc, "status_code", None)
                 if status_code == 429 or "rate" in type(exc).__name__.lower():
                     if attempt >= self.max_retries:
-                        raise LLMRateLimitError() from exc
+                        raise LLMRateLimitError(_provider_diagnostic(exc)) from exc
                 else:
-                    raise LLMError("The language model request failed.") from exc
+                    raise LLMError(
+                        f"The language model request failed. {_provider_diagnostic(exc)}"
+                    ) from exc
             time.sleep(2**attempt)
         raise LLMError("The language model request failed.")

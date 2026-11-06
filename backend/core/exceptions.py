@@ -123,9 +123,12 @@ class LLMError(AppException):
 class LLMRateLimitError(LLMError):
     """Raised when LLM rate limit is hit."""
 
-    def __init__(self):
+    def __init__(self, diagnostic: str | None = None):
         super().__init__(
-            message="LLM rate limit exceeded. Please try again in a moment.",
+            message=(
+                "LLM rate limit exceeded. Please try again in a moment."
+                f"{f' {diagnostic}' if diagnostic else ''}"
+            ),
             detail={"retry_after_seconds": 60},
         )
 
@@ -133,8 +136,11 @@ class LLMRateLimitError(LLMError):
 class LLMTimeoutError(LLMError):
     """Raised when an LLM request times out."""
 
-    def __init__(self):
-        super().__init__("The language model request timed out.")
+    def __init__(self, diagnostic: str | None = None):
+        super().__init__(
+            "The language model request timed out."
+            f"{f' {diagnostic}' if diagnostic else ''}"
+        )
 
 
 class ConversationNotFoundError(AppException):
