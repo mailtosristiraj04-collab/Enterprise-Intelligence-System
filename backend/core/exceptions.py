@@ -130,6 +130,13 @@ class LLMRateLimitError(LLMError):
         )
 
 
+class LLMTimeoutError(LLMError):
+    """Raised when an LLM request times out."""
+
+    def __init__(self):
+        super().__init__("The language model request timed out.")
+
+
 class ConversationNotFoundError(AppException):
     """Raised when a conversation is not found."""
 

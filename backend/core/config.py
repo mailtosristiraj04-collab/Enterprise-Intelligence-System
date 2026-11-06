@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-2.0-flash"
     gemini_temperature: float = 0.2
     gemini_max_output_tokens: int = 2048
+    gemini_timeout_seconds: float = 30.0
+    gemini_max_retries: int = 2
 
     # Embedding Model
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -47,6 +49,10 @@ class Settings(BaseSettings):
     rrf_constant: int = 60
     bm25_index_filename: str = "chunks.bm25.json"
     rerank_candidate_count: int = 30
+    rag_context_token_budget: int = 3000
+    rag_min_rrf_score: float = 0.0
+    rag_min_dense_score: float = 0.25
+    rag_max_context_chunks: int = 8
 
     # Hybrid Search
     hybrid_search_enabled: bool = True

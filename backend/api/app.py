@@ -10,6 +10,7 @@ from backend.core.config import get_settings
 from backend.core.exceptions import AppException
 from backend.core.logging import get_logger, setup_logging
 from backend.api.documents import router as documents_router
+from backend.api.chat import router as chat_router
 
 logger = get_logger(__name__)
 
@@ -31,6 +32,7 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
     app.include_router(documents_router)
+    app.include_router(chat_router)
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
