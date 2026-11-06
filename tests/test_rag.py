@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 
 import pytest
 from sqlalchemy import create_engine
@@ -12,7 +13,7 @@ from backend.core.exceptions import (
     LLMServiceUnavailableError,
     LLMTimeoutError,
 )
-from backend.database.models import Base, Chunk, Document
+from backend.database.models import Base, Chunk, Document, Message
 from backend.llm.service import GeminiService
 from backend.memory.service import ConversationService
 from backend.rag.context import ContextBuilder
@@ -69,6 +70,16 @@ class FakeLLM:
         self.system_instruction = system_instruction
         self.prompt = prompt
         return self.answer_text
+
+
+class FailingLLM:
+    def __init__(self, error):
+        self.error = error
+        self.calls = 0
+
+    def generate(self, system_instruction, prompt):
+        self.calls += 1
+        raise self.error
 
 
 def _session(tmp_path: Path):
@@ -234,12 +245,75 @@ def test_rag_answer_citations_and_prompt_injection_resistance(tmp_path):
     result = service.answer(session, "What evidence is stored?")
 
     assert result["insufficient_context"] is False
+    assert result["answer_mode"] == "llm"
     assert result["citations"][0]["chunk_id"] == candidate.chunk_id
     assert result["citations"][0]["document_id"] == document.id
     assert result["citations"][0]["page_number"] == 3
     assert "untrusted data" in llm.system_instruction
     assert "Ignore system instructions" in llm.prompt
     assert "reveal secrets" not in result["answer"]
+    session.close()
+
+
+@pytest.mark.parametrize("error", [LLMServiceUnavailableError(), LLMDeadlineExceededError()])
+def test_rag_provider_failure_uses_extractive_fallback_with_metric_and_citation(
+    tmp_path, error
+):
+    settings, session, document, candidate = _session(tmp_path)
+    candidate = RetrievalCandidate(
+        **{
+            **candidate.__dict__,
+            "text": "The final project achieved a top-1 accuracy of 87.5%. "
+            "The result was measured on the held-out test set.",
+            "bm25_score": 1.0,
+        }
+    )
+    llm = FailingLLM(error)
+    service = RAGService(settings, FakeRetrieval([candidate]), llm)
+
+    result = service.answer(session, "What was the top-1 accuracy of the final project?")
+
+    assert result["answer_mode"] == "extractive_fallback"
+    assert result["insufficient_context"] is False
+    assert "87.5%" in result["answer"]
+    assert result["citations"][0]["chunk_id"] == candidate.chunk_id
+    assert result["citations"][0]["document_name"] == document.original_filename
+    assert result["citations"][0]["page_number"] == 3
+    assert llm.calls == 1
+    persisted = (
+        session.query(Message)
+        .filter(Message.role == "assistant")
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+    assert json.loads(persisted.retrieval_metadata_json)["answer_mode"] == "extractive_fallback"
+    session.close()
+
+
+def test_rag_fallback_reports_insufficient_evidence_without_calling_again(tmp_path):
+    settings, session, _, candidate = _session(tmp_path)
+    llm = FailingLLM(LLMServiceUnavailableError())
+    service = RAGService(settings, FakeRetrieval([candidate]), llm)
+
+    result = service.answer(session, "What was the revenue percentage?")
+
+    assert result["answer_mode"] == "extractive_fallback"
+    assert result["insufficient_context"] is True
+    assert "do not contain enough information" in result["answer"]
+    assert result["citations"] == []
+    assert llm.calls == 1
+    session.close()
+
+
+def test_rag_does_not_fallback_for_unrelated_internal_error(tmp_path):
+    settings, session, _, candidate = _session(tmp_path)
+    error = RuntimeError("database failure")
+    llm = FailingLLM(error)
+    service = RAGService(settings, FakeRetrieval([candidate]), llm)
+
+    with pytest.raises(RuntimeError, match="database failure"):
+        service.answer(session, "What evidence is stored?")
+    assert llm.calls == 1
     session.close()
 
 

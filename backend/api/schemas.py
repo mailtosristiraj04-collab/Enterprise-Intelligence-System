@@ -64,3 +64,4 @@ class ChatResponse(BaseModel):
     retrieved_chunks: list[dict[str, object]]
     retrieval: dict[str, object]
     insufficient_context: bool
+    answer_mode: str

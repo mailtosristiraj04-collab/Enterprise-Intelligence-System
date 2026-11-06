@@ -28,6 +28,7 @@ def render(client: APIClient) -> None:
                 "content": response.get("answer", ""),
                 "citations": response.get("citations", []),
                 "insufficient_context": response.get("insufficient_context", False),
+                "answer_mode": response.get("answer_mode", "llm"),
             }
             st.session_state.chat_messages.append(assistant_message)
             render_message(assistant_message)

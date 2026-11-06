@@ -58,6 +58,7 @@ class FakeRAG:
             "retrieved_chunks": [],
             "retrieval": {"candidate_count": 0},
             "insufficient_context": True,
+            "answer_mode": "insufficient_context",
         }
 
 
@@ -72,6 +73,27 @@ class ProviderFailingRAG:
 
     def answer(self, session, question, conversation_id=None):
         raise self.error
+
+
+class FallbackRAG:
+    def answer(self, session, question, conversation_id=None):
+        return {
+            "answer": "Based on the indexed documents: accuracy was 87.5%.",
+            "citations": [
+                {
+                    "document_id": "doc-1",
+                    "document_name": "source.txt",
+                    "chunk_id": "chunk-1",
+                    "page_number": 3,
+                    "excerpt": "accuracy was 87.5%.",
+                }
+            ],
+            "conversation_id": "conversation-1",
+            "retrieved_chunks": [],
+            "retrieval": {"answer_mode": "extractive_fallback"},
+            "insufficient_context": False,
+            "answer_mode": "extractive_fallback",
+        }
 
 
 def _session_override():
@@ -122,6 +144,7 @@ def test_api_endpoints_and_openapi() -> None:
     assert upload.json()["original_filename"] == "source.txt"
     assert chat.status_code == 200
     assert chat.json()["insufficient_context"] is True
+    assert chat.json()["answer_mode"] == "insufficient_context"
     assert schema.status_code == 200
     assert "/documents/upload" in schema.json()["paths"]
     assert "/chat" in schema.json()["paths"]
@@ -207,6 +230,19 @@ def test_api_provider_failure_logs_sanitized_chained_traceback(monkeypatch) -> N
     assert "secret" not in logged["traceback"]
     assert "authorization=[REDACTED]" in logged["traceback"]
     assert logged["provider_status"] == 504
+    app.dependency_overrides.clear()
+
+
+def test_api_returns_extractive_fallback_mode_and_citations() -> None:
+    client, app = _client()
+    app.dependency_overrides[get_rag_service] = lambda: FallbackRAG()
+
+    with client:
+        response = client.post("/chat", json={"question": "What was the accuracy?"})
+
+    assert response.status_code == 200
+    assert response.json()["answer_mode"] == "extractive_fallback"
+    assert response.json()["citations"][0]["page_number"] == 3
     app.dependency_overrides.clear()
 
 

@@ -128,7 +128,86 @@ def test_assistant_failed_request_can_retry_without_duplicate_user_message() -> 
         "user",
         "assistant",
     ]
+    assert streamlit.session_state.conversation_id == "conversation-1"
     assert streamlit.session_state.chat_messages[0]["content"] == "Question"
     assert streamlit.errors == [
         "The AI provider did not complete the request in time. Please try again."
+    ]
+
+
+def test_assistant_passes_fallback_mode_to_message_renderer() -> None:
+    import frontend.views.assistant as assistant
+
+    class SessionState(dict):
+        __getattr__ = dict.__getitem__
+
+        def __setattr__(self, key, value):
+            self[key] = value
+
+    class FakeStreamlit:
+        def __init__(self):
+            self.session_state = SessionState()
+
+        def title(self, value):
+            pass
+
+        def caption(self, value):
+            pass
+
+        def chat_input(self, value):
+            return "Question"
+
+        @contextmanager
+        def spinner(self, value):
+            yield
+
+    streamlit = FakeStreamlit()
+    client = Mock()
+    client.chat.return_value = {
+        "conversation_id": "conversation-1",
+        "answer": "Evidence",
+        "citations": [],
+        "insufficient_context": False,
+        "answer_mode": "extractive_fallback",
+    }
+
+    with patch.object(assistant, "st", streamlit), patch.object(
+        assistant, "render_message"
+    ) as render:
+        assistant.render(client)
+
+    assert streamlit.session_state.chat_messages[-1]["answer_mode"] == "extractive_fallback"
+    assert any(
+        call.args[0].get("answer_mode") == "extractive_fallback"
+        for call in render.call_args_list
+    )
+
+
+def test_chat_message_renders_fallback_notice() -> None:
+    import frontend.components.chat_message as chat_message
+
+    class FakeStreamlit:
+        def __init__(self):
+            self.captions = []
+
+        @contextmanager
+        def chat_message(self, role):
+            yield
+
+        def caption(self, value):
+            self.captions.append(value)
+
+        def markdown(self, value):
+            pass
+
+    streamlit = FakeStreamlit()
+    with patch.object(chat_message, "st", streamlit), patch.object(
+        chat_message, "render_citations"
+    ):
+        chat_message.render_message(
+            {"role": "assistant", "content": "Evidence", "answer_mode": "extractive_fallback"}
+        )
+
+    assert streamlit.captions == [
+        "AI generation is temporarily unavailable. Showing relevant information directly from your documents."
     ]
