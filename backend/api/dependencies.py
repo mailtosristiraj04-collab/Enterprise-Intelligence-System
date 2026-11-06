@@ -12,6 +12,7 @@ from backend.ingestion.service import IngestionService
 from backend.memory.service import ConversationService
 from backend.rag.service import RAGService
 from backend.retrieval.service import RetrievalService
+from backend.evaluation.runner import EvaluationRunner
 
 
 @dataclass
@@ -24,6 +25,7 @@ class ServiceContainer:
     retrieval: RetrievalService
     conversations: ConversationService
     rag: RAGService
+    evaluation: EvaluationRunner
 
 
 def get_container(request: Request) -> ServiceContainer:
@@ -59,3 +61,7 @@ def get_conversation_service(request: Request) -> ConversationService:
 
 def get_rag_service(request: Request) -> RAGService:
     return get_container(request).rag
+
+
+def get_evaluation_runner(request: Request) -> EvaluationRunner:
+    return get_container(request).evaluation

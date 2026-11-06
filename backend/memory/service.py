@@ -26,7 +26,7 @@ class ConversationService:
         return conversation
 
     def history(
-        self, session: Session, conversation_id: str, limit: int
+        self, session: Session, conversation_id: str, limit: int, token_limit: int | None = None
     ) -> list[tuple[str, str]]:
         if limit <= 0:
             return []
@@ -35,9 +35,19 @@ class ConversationService:
             select(Message)
             .where(Message.conversation_id == conversation_id)
             .order_by(Message.created_at.desc())
-            .limit(limit)
+            .limit(max(limit * 4, limit))
         ).all()
-        return [(message.role, message.content) for message in reversed(messages)]
+        selected: list[tuple[str, str]] = []
+        token_count = 0
+        for message in messages:
+            estimate = max(1, len(message.content.split()))
+            if token_limit is not None and selected and token_count + estimate > token_limit:
+                continue
+            selected.append((message.role, message.content))
+            token_count += estimate
+            if len(selected) >= limit:
+                break
+        return list(reversed(selected))
 
     def add_message(
         self,

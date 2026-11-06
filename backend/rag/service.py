@@ -55,7 +55,10 @@ class RAGService:
             else self.conversations.create(session)
         )
         history = self.conversations.history(
-            session, conversation.id, self.settings.max_conversation_history
+            session,
+            conversation.id,
+            self.settings.max_conversation_history,
+            self.settings.max_conversation_history_tokens,
         )
         candidates = self.retrieval.retrieve(
             session, query, top_k=self.settings.retrieval_top_k

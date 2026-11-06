@@ -77,3 +77,25 @@ class APIClient:
         if conversation_id:
             payload["conversation_id"] = conversation_id
         return self._request("POST", "/chat", json=payload)
+
+    def run_evaluation(
+        self,
+        dataset_path: str | None = None,
+        k_values: list[int] | None = None,
+        configurations: list[str] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {"k_values": k_values or [5, 10]}
+        if dataset_path:
+            payload["dataset_path"] = dataset_path
+        if configurations:
+            payload["configurations"] = configurations
+        return self._request("POST", "/evaluation/run", json=payload)
+
+    def evaluation_runs(self) -> list[dict[str, Any]]:
+        return self._request("GET", "/evaluation/runs")
+
+    def evaluation_metrics(self) -> dict[str, Any]:
+        return self._request("GET", "/evaluation/metrics")
+
+    def evaluation_run(self, run_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/evaluation/runs/{run_id}")

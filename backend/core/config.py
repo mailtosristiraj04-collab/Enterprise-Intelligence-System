@@ -81,7 +81,11 @@ class Settings(BaseSettings):
 
     # Conversation
     max_conversation_history: int = 10
+    max_conversation_history_tokens: int = 2000
     max_question_length: int = 2000
+
+    # Evaluation
+    evaluation_dataset_path: str = "data/evaluation/dataset.jsonl"
 
     @property
     def max_file_size_bytes(self) -> int:
@@ -106,6 +110,11 @@ class Settings(BaseSettings):
     def get_extracted_path(self) -> Path:
         """Get absolute path for extracted text."""
         return self.project_root / self.extracted_directory
+
+    def get_evaluation_dataset_path(self) -> Path:
+        """Get the path to the separately maintained evaluation dataset."""
+        path = Path(self.evaluation_dataset_path)
+        return path if path.is_absolute() else self.project_root / path
 
     def get_database_path(self) -> Path:
         """Get absolute path for the database file."""

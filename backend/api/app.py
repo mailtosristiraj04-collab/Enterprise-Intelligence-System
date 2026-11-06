@@ -18,6 +18,8 @@ from backend.ingestion.service import IngestionService
 from backend.memory.service import ConversationService
 from backend.rag.service import RAGService
 from backend.retrieval.service import RetrievalService
+from backend.evaluation.runner import EvaluationRunner
+from backend.api.evaluation import router as evaluation_router
 
 logger = get_logger(__name__)
 
@@ -43,6 +45,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         retrieval=retrieval,
         conversations=conversations,
         rag=rag,
+        evaluation=EvaluationRunner(settings, retrieval),
     )
     try:
         yield
@@ -63,6 +66,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(documents_router)
     app.include_router(chat_router)
+    app.include_router(evaluation_router)
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:
