@@ -6,6 +6,8 @@ import re
 import uuid
 from pathlib import Path
 
+from backend.core.exceptions import FileTooLargeError, FileValidationError
+
 
 def generate_safe_filename(original_filename: str) -> str:
     """Generate a safe filename preserving the extension.
@@ -79,3 +81,37 @@ def estimate_tokens(text: str) -> int:
         Estimated token count.
     """
     return max(1, len(text) // 4)
+
+
+def validate_file(
+    filename: str,
+    file_content: bytes,
+    *,
+    max_file_size_bytes: int,
+    allowed_extensions: set[str],
+) -> None:
+    """Validate an uploaded file before it is written to disk."""
+    if not filename or not Path(filename).name:
+        raise FileValidationError("A filename is required.")
+    extension = get_file_extension(filename)
+    if extension not in {item.lower() for item in allowed_extensions}:
+        raise FileValidationError(
+            f"Unsupported file extension '{extension or '[none]'}'."
+        )
+    if len(file_content) > max_file_size_bytes:
+        raise FileTooLargeError(
+            filename,
+            len(file_content) / (1024 * 1024),
+            max_file_size_bytes // (1024 * 1024),
+        )
+
+
+def save_file(file_content: bytes, directory: Path, filename: str) -> Path:
+    """Write content using a generated safe filename and return its path."""
+    directory.mkdir(parents=True, exist_ok=True)
+    safe_filename = generate_safe_filename(filename)
+    destination = (directory / safe_filename).resolve()
+    if destination.parent != directory.resolve():
+        raise FileValidationError("The destination path is outside the upload directory.")
+    destination.write_bytes(file_content)
+    return destination

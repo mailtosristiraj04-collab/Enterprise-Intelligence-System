@@ -1,7 +1,8 @@
 """Centralized application configuration."""
 
-from pathlib import Path
 from functools import lru_cache
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -48,7 +49,7 @@ class Settings(BaseSettings):
 
     # File Upload
     max_file_size_mb: int = 50
-    allowed_extensions: set = {".pdf", ".doc", ".docx", ".txt"}
+    allowed_extensions: set[str] = {".pdf", ".doc", ".docx", ".txt"}
 
     # Storage Paths
     data_directory: str = "data"
@@ -98,14 +99,18 @@ class Settings(BaseSettings):
         """Get absolute path for the database file."""
         db_url = self.metadata_database_url
         if db_url.startswith("sqlite:///"):
-            rel_path = db_url.replace("sqlite:///", "")
-            return self.project_root / rel_path
+            database_path = Path(db_url.removeprefix("sqlite:///"))
+            if database_path.is_absolute():
+                return database_path
+            return self.project_root / database_path
         return Path(db_url)
 
     def get_database_url(self) -> str:
         """Get absolute database URL."""
-        db_path = self.get_database_path()
-        return f"sqlite:///{db_path}"
+        if not self.metadata_database_url.startswith("sqlite:///"):
+            return self.metadata_database_url
+        db_path = self.get_database_path().resolve()
+        return f"sqlite:///{db_path.as_posix()}"
 
     def ensure_directories(self) -> None:
         """Create all required data directories."""

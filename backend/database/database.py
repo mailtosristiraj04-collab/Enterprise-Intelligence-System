@@ -20,7 +20,7 @@ class Database:
         db_path = settings.get_database_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
 
-        self.database_url = f"sqlite:///{db_path}"
+        self.database_url = settings.get_database_url()
 
         self.engine = create_engine(
             self.database_url,
@@ -29,7 +29,7 @@ class Database:
         )
 
         @event.listens_for(self.engine, "connect")
-        def set_sqlite_pragma(dbapi_connection, connection_record):
+        def set_sqlite_pragma(dbapi_connection, _connection_record):
             cursor = dbapi_connection.cursor()
             cursor.execute("PRAGMA journal_mode=WAL")
             cursor.execute("PRAGMA foreign_keys=ON")
