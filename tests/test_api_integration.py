@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from backend.api.app import create_app
@@ -10,8 +11,12 @@ from backend.api.dependencies import (
     get_rag_service,
 )
 from backend.api.schemas import ChatResponse
-from backend.core.exceptions import ConversationNotFoundError
-from backend.core.exceptions import LLMError
+from backend.core.exceptions import (
+    ConversationNotFoundError,
+    LLMDeadlineExceededError,
+    LLMError,
+    LLMServiceUnavailableError,
+)
 from backend.database.models import Document
 
 
@@ -59,6 +64,14 @@ class FakeRAG:
 class FailingRAG:
     def answer(self, session, question, conversation_id=None):
         raise LLMError("model unavailable")
+
+
+class ProviderFailingRAG:
+    def __init__(self, error):
+        self.error = error
+
+    def answer(self, session, question, conversation_id=None):
+        raise self.error
 
 
 def _session_override():
@@ -137,6 +150,63 @@ def test_api_llm_failure_is_explicit() -> None:
 
     assert response.status_code == 502
     assert response.json() == {"detail": "model unavailable"}
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code", "message"),
+    [
+        (
+            LLMServiceUnavailableError("HTTP status 503: secret=do-not-expose"),
+            503,
+            "The AI provider is temporarily unavailable. Please try again later.",
+        ),
+        (
+            LLMDeadlineExceededError(),
+            504,
+            "The AI provider did not complete the request in time. Please try again.",
+        ),
+    ],
+)
+def test_api_provider_failures_have_safe_status_and_body(
+    error, status_code, message
+) -> None:
+    client, app = _client()
+    provider_error = RuntimeError("authorization=secret provider payload")
+    error.__cause__ = provider_error
+    app.dependency_overrides[get_rag_service] = lambda: ProviderFailingRAG(error)
+
+    with client:
+        response = client.post("/chat", json={"question": "Question"})
+
+    assert response.status_code == status_code
+    assert response.json() == {"detail": message}
+    assert "secret" not in response.text
+    assert "authorization" not in response.text
+    app.dependency_overrides.clear()
+
+
+def test_api_provider_failure_logs_sanitized_chained_traceback(monkeypatch) -> None:
+    import importlib
+    from unittest.mock import Mock
+
+    app_module = importlib.import_module("backend.api.app")
+    logger = Mock()
+    monkeypatch.setattr(app_module, "logger", logger)
+    error = LLMDeadlineExceededError()
+    error.__cause__ = RuntimeError("authorization=secret provider payload")
+    client, app = _client()
+    app.dependency_overrides[get_rag_service] = lambda: ProviderFailingRAG(error)
+
+    with client:
+        response = client.post("/chat", json={"question": "Question"})
+
+    assert response.status_code == 504
+    logger.error.assert_called_once()
+    logged = logger.error.call_args.kwargs
+    assert "secret" not in logged["traceback"]
+    assert "authorization=[REDACTED]" in logged["traceback"]
+    assert logged["provider_status"] == 504
     app.dependency_overrides.clear()
 
 

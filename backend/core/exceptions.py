@@ -133,6 +133,26 @@ class LLMRateLimitError(LLMError):
         )
 
 
+class LLMServiceUnavailableError(LLMError):
+    """Raised when the language model provider is temporarily unavailable."""
+
+    def __init__(self, diagnostic: str | None = None):
+        super().__init__(
+            "The AI provider is temporarily unavailable. Please try again later.",
+        )
+        self.status_code = 503
+
+
+class LLMDeadlineExceededError(LLMError):
+    """Raised when the provider does not complete generation before its deadline."""
+
+    def __init__(self):
+        super().__init__(
+            "The AI provider did not complete the request in time. Please try again.",
+        )
+        self.status_code = 504
+
+
 class LLMTimeoutError(LLMError):
     """Raised when an LLM request times out."""
 

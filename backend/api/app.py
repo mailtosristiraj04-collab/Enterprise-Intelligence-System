@@ -2,6 +2,8 @@
 
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
+import re
+import traceback
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -9,7 +11,11 @@ from fastapi.responses import JSONResponse
 
 from backend.api.dependencies import ServiceContainer
 from backend.core.config import get_settings
-from backend.core.exceptions import AppException
+from backend.core.exceptions import (
+    AppException,
+    LLMDeadlineExceededError,
+    LLMServiceUnavailableError,
+)
 from backend.core.logging import get_logger, setup_logging
 from backend.api.documents import router as documents_router
 from backend.api.chat import router as chat_router
@@ -22,6 +28,19 @@ from backend.evaluation.runner import EvaluationRunner
 from backend.api.evaluation import router as evaluation_router
 
 logger = get_logger(__name__)
+
+
+def _safe_traceback(exc: BaseException) -> str:
+    """Redact sensitive values from a chained provider traceback."""
+    text = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    text = re.sub(
+        r"(?i)(authorization|x-goog-api-key|api[-_ ]?key)\s*[:=]\s*\S+",
+        r"\1=[REDACTED]",
+        text,
+    )
+    text = re.sub(r"(?i)bearer\s+\S+", "******", text)
+    text = re.sub(r"(?i)(key|token|secret)=\S+", r"\1=[REDACTED]", text)
+    return text
 
 
 @asynccontextmanager
@@ -77,9 +96,21 @@ def create_app() -> FastAPI:
     async def app_exception_handler(
         _: Request, exc: AppException
     ) -> JSONResponse:
-        logger.warning("application_error", message=exc.message, status_code=exc.status_code)
+        if isinstance(exc, (LLMServiceUnavailableError, LLMDeadlineExceededError)):
+            cause = exc.__cause__
+            if cause is not None:
+                logger.error(
+                    "llm_provider_error",
+                    error_type=type(cause).__name__,
+                    provider_status=exc.status_code,
+                    traceback=_safe_traceback(cause),
+                )
+        else:
+            logger.warning("application_error", message=exc.message, status_code=exc.status_code)
         body: dict[str, object] = {"detail": exc.message}
-        if exc.detail is not None:
+        if exc.detail is not None and not isinstance(
+            exc, (LLMServiceUnavailableError, LLMDeadlineExceededError)
+        ):
             body["metadata"] = exc.detail
         return JSONResponse(status_code=exc.status_code, content=body)
 

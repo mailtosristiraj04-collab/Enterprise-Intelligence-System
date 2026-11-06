@@ -7,7 +7,13 @@ import re
 from threading import RLock
 from typing import Any
 
-from backend.core.exceptions import LLMError, LLMRateLimitError, LLMTimeoutError
+from backend.core.exceptions import (
+    LLMDeadlineExceededError,
+    LLMError,
+    LLMRateLimitError,
+    LLMServiceUnavailableError,
+    LLMTimeoutError,
+)
 
 
 def _provider_diagnostic(error: BaseException) -> str:
@@ -25,6 +31,19 @@ def _provider_diagnostic(error: BaseException) -> str:
     if len(message) > 240:
         message = f"{message[:237]}..."
     return f"HTTP status {status_code}: {message}" if status_code else message
+
+
+def _provider_status_code(error: BaseException) -> int | None:
+    """Return a provider HTTP status from SDK or HTTP-style exceptions."""
+    status_code = (
+        getattr(error, "status_code", None)
+        or getattr(error, "code", None)
+        or getattr(getattr(error, "response", None), "status_code", None)
+    )
+    try:
+        return int(status_code) if status_code is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 class GeminiService:
@@ -72,7 +91,7 @@ class GeminiService:
             return self._client
 
     def generate(self, system_instruction: str, prompt: str) -> str:
-        """Generate a non-empty answer, retrying only transient rate limits/timeouts."""
+        """Generate a non-empty answer with bounded transient-error retries."""
         if not system_instruction.strip() or not prompt.strip():
             raise ValueError("system_instruction and prompt must be non-empty.")
         client = self._get_client()
@@ -102,8 +121,13 @@ class GeminiService:
                 if attempt >= self.max_retries:
                     raise LLMTimeoutError(_provider_diagnostic(exc)) from exc
             except Exception as exc:
-                status_code = getattr(exc, "status_code", None)
-                if status_code == 429 or "rate" in type(exc).__name__.lower():
+                status_code = _provider_status_code(exc)
+                if status_code == 504:
+                    raise LLMDeadlineExceededError() from exc
+                if status_code == 503:
+                    if attempt >= self.max_retries:
+                        raise LLMServiceUnavailableError(_provider_diagnostic(exc)) from exc
+                elif status_code == 429 or "rate" in type(exc).__name__.lower():
                     if attempt >= self.max_retries:
                         raise LLMRateLimitError(_provider_diagnostic(exc)) from exc
                 else:

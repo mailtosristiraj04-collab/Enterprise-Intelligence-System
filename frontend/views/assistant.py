@@ -16,12 +16,13 @@ def render(client: APIClient) -> None:
     question = st.chat_input("Ask about your enterprise knowledge")
     if not question:
         return
-    st.session_state.chat_messages.append({"role": "user", "content": question})
-    render_message(st.session_state.chat_messages[-1])
+    user_message = {"role": "user", "content": question}
+    render_message(user_message)
     with st.spinner("Searching the knowledge base…"):
         try:
             response = client.chat(question, st.session_state.conversation_id)
             st.session_state.conversation_id = response.get("conversation_id")
+            st.session_state.chat_messages.append(user_message)
             assistant_message = {
                 "role": "assistant",
                 "content": response.get("answer", ""),

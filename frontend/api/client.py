@@ -38,6 +38,14 @@ class APIClient:
         except requests.RequestException as exc:
             raise APIClientError("The backend is unavailable.") from exc
         if not response.ok:
+            if response.status_code == 503:
+                raise APIClientError(
+                    "The AI provider is temporarily unavailable. Please try again later."
+                )
+            if response.status_code == 504:
+                raise APIClientError(
+                    "The AI provider did not complete the request in time. Please try again."
+                )
             try:
                 detail = response.json().get("detail", "The backend request failed.")
             except ValueError:

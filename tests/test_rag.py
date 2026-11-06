@@ -5,7 +5,13 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.core.config import Settings
-from backend.core.exceptions import LLMError, LLMRateLimitError, LLMTimeoutError
+from backend.core.exceptions import (
+    LLMDeadlineExceededError,
+    LLMError,
+    LLMRateLimitError,
+    LLMServiceUnavailableError,
+    LLMTimeoutError,
+)
 from backend.database.models import Base, Chunk, Document
 from backend.llm.service import GeminiService
 from backend.memory.service import ConversationService
@@ -25,6 +31,19 @@ class FakeModels:
         if self.error:
             raise self.error
         return self.response
+
+
+class SequenceModels:
+    def __init__(self, outcomes):
+        self.outcomes = list(outcomes)
+        self.calls = []
+
+    def generate_content(self, **kwargs):
+        self.calls.append(kwargs)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
 
 
 class FakeClient:
@@ -130,6 +149,65 @@ def test_gemini_service_rate_limit():
     error = type("RateLimitError", (Exception,), {"status_code": 429})()
     with pytest.raises(LLMRateLimitError):
         GeminiService("secret", "model", client=FakeClient(error=error), max_retries=0).generate("s", "p")
+
+
+def test_gemini_service_retries_503_then_succeeds(monkeypatch):
+    error = type("ServerError", (Exception,), {"code": 503})("temporarily unavailable")
+    response = type("Response", (), {"text": "success"})()
+    models = SequenceModels([error, error, response])
+    client = type("Client", (), {"models": models})()
+    sleeps = []
+    monkeypatch.setattr("backend.llm.service.time.sleep", sleeps.append)
+
+    result = GeminiService("secret", "model", client=client).generate("s", "p")
+
+    assert result == "success"
+    assert len(models.calls) == 3
+    assert sleeps == [1, 2]
+
+
+def test_gemini_service_repeated_503_exhausts_retry_limit(monkeypatch):
+    error = type("ServerError", (Exception,), {"code": 503})("provider unavailable")
+    models = SequenceModels([error, error, error])
+    client = type("Client", (), {"models": models})()
+    sleeps = []
+    monkeypatch.setattr("backend.llm.service.time.sleep", sleeps.append)
+
+    with pytest.raises(LLMServiceUnavailableError) as raised:
+        GeminiService("secret", "model", client=client).generate("s", "p")
+
+    assert len(models.calls) == 3
+    assert sleeps == [1, 2]
+    assert raised.value.__cause__ is error
+    assert "provider unavailable" not in str(raised.value)
+
+
+def test_gemini_service_does_not_retry_504_or_expose_provider_details():
+    error = type("ServerError", (Exception,), {"code": 504})(
+        "DEADLINE_EXCEEDED internal provider details"
+    )
+    models = SequenceModels([error, type("Response", (), {"text": "unexpected"})()])
+    client = type("Client", (), {"models": models})()
+
+    with pytest.raises(LLMDeadlineExceededError) as raised:
+        GeminiService("secret", "model", client=client).generate("s", "p")
+
+    assert len(models.calls) == 1
+    assert str(raised.value) == "The AI provider did not complete the request in time. Please try again."
+    assert raised.value.__cause__ is error
+
+
+def test_gemini_service_does_not_retry_non_retryable_4xx():
+    error = type("ClientError", (Exception,), {"code": 400})("invalid request")
+    models = SequenceModels([error, type("Response", (), {"text": "unexpected"})()])
+    client = type("Client", (), {"models": models})()
+
+    with pytest.raises(LLMError) as raised:
+        GeminiService("secret", "model", client=client).generate("s", "p")
+
+    assert len(models.calls) == 1
+    assert raised.value.__cause__ is error
+    assert "HTTP status 400" in str(raised.value)
 
 
 def test_context_builder_respects_budget_and_citations(tmp_path):
