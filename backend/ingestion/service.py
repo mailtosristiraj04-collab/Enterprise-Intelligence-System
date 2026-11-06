@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from backend.core.config import Settings
 from backend.core.exceptions import DocumentNotFoundError, DuplicateDocumentError, EmptyDocumentError
 from backend.database.models import Chunk, Document, ProcessingStatus
+from backend.core.logging import get_logger
 from backend.embeddings.service import EmbeddingService
 from backend.vectorstore.faiss_store import FaissVectorStore
 from backend.retrieval.bm25 import BM25Retriever
@@ -16,6 +17,8 @@ from backend.ingestion.chunking import chunk_pages
 from backend.ingestion.extractors import get_extractor
 from backend.ingestion.preprocessing import clean_text
 from backend.utils.file_utils import compute_file_hash, get_file_extension, save_file, validate_file
+
+logger = get_logger(__name__)
 
 
 class IngestionService:
@@ -133,12 +136,28 @@ class IngestionService:
             session.rollback()
             try:
                 self.vector_store.delete_document(document.id)
-            finally:
+            except Exception:
+                logger.exception("failed_ingestion_vector_cleanup", document_id=document.id)
+            try:
                 failed = session.get(Document, document.id)
                 if failed is not None:
+                    session.query(Chunk).filter(Chunk.document_id == document.id).delete(
+                        synchronize_session=False
+                    )
+                    failed.chunk_count = 0
                     failed.status = ProcessingStatus.FAILED.value
                     failed.error_message = str(exc)
                     session.commit()
+                    BM25Retriever(
+                        self.settings.get_vectorstore_path() / self.settings.bm25_index_filename
+                    ).rebuild(session)
+            except Exception:
+                session.rollback()
+                logger.exception("failed_ingestion_database_cleanup", document_id=document.id)
+            try:
+                stored_path.unlink(missing_ok=True)
+            except Exception:
+                logger.exception("failed_ingestion_file_cleanup", document_id=document.id)
             raise
 
     @staticmethod

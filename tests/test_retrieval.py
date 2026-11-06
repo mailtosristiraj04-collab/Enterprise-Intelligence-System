@@ -3,7 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from backend.core.config import Settings
-from backend.database.models import Base, Chunk, Document
+from backend.database.models import Base, Chunk, Document, ProcessingStatus
 from backend.retrieval.bm25 import BM25Retriever
 from backend.retrieval.fusion import reciprocal_rank_fusion
 from backend.retrieval.models import RetrievalCandidate
@@ -97,6 +97,66 @@ def test_dense_retrieval_filter_and_empty_query(tmp_path):
     assert retriever.retrieve(session, "database", 5)[0].chunk_id == chunks[0].id
     assert retriever.retrieve(session, "", 5) == []
     assert retriever.retrieve(session, "database", 5, "missing") == []
+    session.close()
+
+
+def test_dense_retrieval_empty_index_returns_no_results(tmp_path):
+    settings, session, _, _ = _session(tmp_path)
+    store = FaissVectorStore(settings.get_vectorstore_path(), 2)
+    from backend.retrieval.dense import DenseRetriever
+
+    retriever = DenseRetriever(FakeEmbeddings(), store)
+
+    assert store.count == 0
+    assert retriever.retrieve(session, "database", 5) == []
+    session.close()
+
+
+def test_dense_retrieval_skips_many_stale_vectors_without_shortening_top_k(tmp_path):
+    settings, session, document, chunks = _session(tmp_path)
+    stale_documents = []
+    stale_chunks = []
+    for index in range(10):
+        stale_document = Document(
+            id=f"failed-{index}",
+            filename=f"failed-{index}.txt",
+            original_filename=f"failed-{index}.txt",
+            file_type=".txt",
+            file_size=10,
+            file_hash=f"{index + 1:064d}",
+            stored_file_path="",
+            status=ProcessingStatus.FAILED.value,
+        )
+        stale_documents.append(stale_document)
+        stale_chunks.append(
+            Chunk(
+                id=f"failed-chunk-{index}",
+                document_id=stale_document.id,
+                chunk_index=0,
+                text=f"failed stale content {index}",
+                char_count=22,
+                token_estimate=4,
+            )
+        )
+    session.add_all(stale_documents + stale_chunks)
+    session.commit()
+
+    store = FaissVectorStore(settings.get_vectorstore_path(), 2)
+    stale_vectors = np.tile(np.array([[1.0, 0.0]], dtype=np.float32), (10, 1))
+    valid_vectors = np.array([[0.99, 0.141067], [0.97, 0.2431]], dtype=np.float32)
+    valid_vectors /= np.linalg.norm(valid_vectors, axis=1, keepdims=True)
+    store.add(
+        np.vstack([stale_vectors, valid_vectors]),
+        [item.id for item in stale_chunks] + [item.id for item in chunks],
+        "mixed",
+    )
+    from backend.retrieval.dense import DenseRetriever
+
+    retriever = DenseRetriever(FakeEmbeddings(), store)
+    results = retriever.retrieve(session, "database", 2)
+
+    assert [result.chunk_id for result in results] == [chunks[0].id, chunks[1].id]
+    assert all(result.document_id == document.id for result in results)
     session.close()
 
 

@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.database.models import Chunk
+from backend.database.models import Chunk, Document, ProcessingStatus
 from backend.embeddings.service import EmbeddingService
 from backend.retrieval.models import RetrievalCandidate
 from backend.vectorstore.faiss_store import FaissVectorStore
@@ -25,12 +25,21 @@ class DenseRetriever:
     ) -> list[RetrievalCandidate]:
         if not query.strip() or top_k <= 0:
             return []
-        search_k = self.vector_store.count if document_id else top_k * 2
+        # Search the full index so stale vectors for non-completed documents
+        # cannot displace valid completed-document results.
+        search_k = self.vector_store.count
         results = self.vector_store.search(self.embeddings.embed_query(query), search_k)
         ids = [result.chunk_id for result in results]
         if not ids:
             return []
-        rows = session.scalars(select(Chunk).where(Chunk.id.in_(ids))).all()
+        rows = session.scalars(
+            select(Chunk)
+            .join(Document)
+            .where(
+                Chunk.id.in_(ids),
+                Document.status == ProcessingStatus.COMPLETED.value,
+            )
+        ).all()
         by_id = {row.id: row for row in rows}
         candidates: list[RetrievalCandidate] = []
         for result in results:

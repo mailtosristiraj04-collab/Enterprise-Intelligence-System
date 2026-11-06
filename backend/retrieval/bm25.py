@@ -11,7 +11,7 @@ from rank_bm25 import BM25Okapi
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.database.models import Chunk
+from backend.database.models import Chunk, Document, ProcessingStatus
 from backend.retrieval.models import RetrievalCandidate
 
 
@@ -32,7 +32,12 @@ class BM25Retriever:
         self._load()
 
     def rebuild(self, session: Session) -> None:
-        rows = session.scalars(select(Chunk).order_by(Chunk.document_id, Chunk.chunk_index)).all()
+        rows = session.scalars(
+            select(Chunk)
+            .join(Document)
+            .where(Document.status == ProcessingStatus.COMPLETED.value)
+            .order_by(Chunk.document_id, Chunk.chunk_index)
+        ).all()
         self._chunks = [
             {
                 "chunk_id": row.id,
@@ -70,7 +75,10 @@ class BM25Retriever:
             return []
         current_ids = tuple(
             row for row in session.scalars(
-                select(Chunk.id).order_by(Chunk.document_id, Chunk.chunk_index)
+                select(Chunk.id)
+                .join(Document)
+                .where(Document.status == ProcessingStatus.COMPLETED.value)
+                .order_by(Chunk.document_id, Chunk.chunk_index)
             ).all()
         )
         signature = tuple(hash((item["chunk_id"], item["text"])) for item in self._chunks)
@@ -78,11 +86,14 @@ class BM25Retriever:
             self.rebuild(session)
         if self._index is None:
             return []
+        active_ids = set(current_ids)
         scores = self._index.get_scores(tokenize(query))
         ranked = sorted(enumerate(scores), key=lambda item: item[1], reverse=True)
         results: list[RetrievalCandidate] = []
         for index, score in ranked:
             item = self._chunks[index]
+            if str(item["chunk_id"]) not in active_ids:
+                continue
             if document_id and item["document_id"] != document_id:
                 continue
             results.append(
