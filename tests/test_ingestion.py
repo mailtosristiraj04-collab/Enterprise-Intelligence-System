@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.api.app import create_app
 from backend.core.config import Settings
 from backend.core.exceptions import ExtractionDependencyError
+from backend.api.dependencies import get_db_session, get_ingestion_service
 from backend.database.database import Database
 from backend.database.models import Chunk, Document
 from backend.ingestion.chunking import chunk_pages
@@ -127,13 +128,24 @@ def test_ingestion_persists_chunks_and_deletion_removes_file(tmp_path: Path) -> 
 def test_api_upload_duplicate_and_missing_document(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings(project_root=tmp_path)
     database = _test_database(settings)
-    monkeypatch.setattr("backend.database.database._db", database)
-    monkeypatch.setattr("backend.api.documents.get_settings", lambda: settings)
-    monkeypatch.setattr(
-        "backend.ingestion.service.EmbeddingService",
-        lambda **kwargs: FakeEmbeddingService(settings.embedding_dimension),
+    vector_store = __import__(
+        "backend.vectorstore.faiss_store", fromlist=["FaissVectorStore"]
+    ).FaissVectorStore(settings.get_vectorstore_path(), settings.embedding_dimension)
+    ingestion = IngestionService(
+        settings, FakeEmbeddingService(settings.embedding_dimension), vector_store
     )
-    with TestClient(create_app()) as client:
+
+    def session_override():
+        session = database.get_session()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app = create_app()
+    app.dependency_overrides[get_db_session] = session_override
+    app.dependency_overrides[get_ingestion_service] = lambda: ingestion
+    with TestClient(app) as client:
         response = client.post("/documents/upload", files={"file": ("sample.txt", b"hello", "text/plain")})
         duplicate = client.post("/documents/upload", files={"file": ("again.txt", b"hello", "text/plain")})
         missing = client.get("/documents/not-found")
