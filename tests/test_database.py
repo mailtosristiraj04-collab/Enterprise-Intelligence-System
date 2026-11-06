@@ -19,6 +19,7 @@ def test_database_creates_tables(tmp_path: Path, monkeypatch) -> None:
             file_type=".pdf",
             file_size=10,
             file_hash="a" * 64,
+            stored_file_path=str(tmp_path / "safe.pdf"),
         )
         session.add(document)
         session.commit()

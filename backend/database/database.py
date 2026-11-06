@@ -17,6 +17,7 @@ class Database:
 
     def __init__(self) -> None:
         settings = get_settings()
+        settings.ensure_directories()
         db_path = settings.get_database_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
 

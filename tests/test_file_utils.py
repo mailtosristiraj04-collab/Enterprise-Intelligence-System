@@ -20,6 +20,17 @@ def test_validate_file_rejects_large_file() -> None:
         validate_file("report.pdf", b"12345", max_file_size_bytes=4, allowed_extensions={".pdf"})
 
 
+def test_validate_file_rejects_mismatched_mime_type() -> None:
+    with pytest.raises(FileValidationError):
+        validate_file(
+            "report.pdf",
+            b"content",
+            max_file_size_bytes=100,
+            allowed_extensions={".pdf"},
+            content_type="text/plain",
+        )
+
+
 def test_save_file_generates_safe_name(tmp_path: Path) -> None:
     saved = save_file(b"content", tmp_path, "../report?.pdf")
 

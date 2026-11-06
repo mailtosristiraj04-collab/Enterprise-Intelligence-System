@@ -45,6 +45,9 @@ class Document(Base):
     file_type: Mapped[str] = mapped_column(String(10), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     file_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    stored_file_path: Mapped[str] = mapped_column(String(1024), nullable=False)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    extraction_warnings_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default=ProcessingStatus.PENDING.value
     )
@@ -80,6 +83,7 @@ class Chunk(Base):
     section_reference: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     char_count: Mapped[int] = mapped_column(Integer, nullable=False)
     token_estimate: Mapped[int] = mapped_column(Integer, nullable=False)
+    metadata_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     faiss_index_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True)
 
     document: Mapped["Document"] = relationship("Document", back_populates="chunks")

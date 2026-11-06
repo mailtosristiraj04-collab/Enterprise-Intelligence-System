@@ -42,6 +42,17 @@ class FileValidationError(AppException):
         super().__init__(message=message, status_code=400)
 
 
+class DuplicateDocumentError(AppException):
+    """Raised when a document with the same content already exists."""
+
+    def __init__(self, file_hash: str):
+        super().__init__(
+            message="A document with the same content has already been uploaded.",
+            status_code=409,
+            detail={"file_hash": file_hash},
+        )
+
+
 class UnsupportedFileTypeError(FileValidationError):
     """Raised for unsupported file types."""
 

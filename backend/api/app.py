@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from backend.core.config import get_settings
 from backend.core.exceptions import AppException
 from backend.core.logging import get_logger, setup_logging
+from backend.api.documents import router as documents_router
 
 logger = get_logger(__name__)
 
@@ -29,6 +30,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+    app.include_router(documents_router)
 
     @app.get("/health", tags=["system"])
     def health() -> dict[str, str]:

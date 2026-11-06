@@ -6,7 +6,7 @@ import re
 import uuid
 from pathlib import Path
 
-from backend.core.exceptions import FileTooLargeError, FileValidationError
+from backend.core.exceptions import FileTooLargeError, FileValidationError, UnsupportedFileTypeError
 
 
 def generate_safe_filename(original_filename: str) -> str:
@@ -89,14 +89,28 @@ def validate_file(
     *,
     max_file_size_bytes: int,
     allowed_extensions: set[str],
+    content_type: str | None = None,
 ) -> None:
     """Validate an uploaded file before it is written to disk."""
     if not filename or not Path(filename).name:
         raise FileValidationError("A filename is required.")
+    if not file_content:
+        raise FileValidationError("The uploaded file is empty.")
     extension = get_file_extension(filename)
     if extension not in {item.lower() for item in allowed_extensions}:
+        raise UnsupportedFileTypeError(filename, extension or "[none]")
+    expected_types = {
+        ".pdf": {"application/pdf"},
+        ".doc": {"application/msword", "application/octet-stream"},
+        ".docx": {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/octet-stream",
+        },
+        ".txt": {"text/plain", "application/octet-stream"},
+    }
+    if content_type and content_type not in expected_types.get(extension, set()):
         raise FileValidationError(
-            f"Unsupported file extension '{extension or '[none]'}'."
+            f"The MIME type '{content_type}' does not match '{extension}'."
         )
     if len(file_content) > max_file_size_bytes:
         raise FileTooLargeError(
