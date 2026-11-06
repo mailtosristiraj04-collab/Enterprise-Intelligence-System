@@ -1,0 +1,42 @@
+# Backend Framework
+fastapi==0.115.12
+uvicorn[standard]==0.34.3
+pydantic==2.11.3
+pydantic-settings==2.9.1
+python-multipart==0.0.20
+
+# LLM - Google Gemini
+google-genai==1.14.0
+
+# Document Processing
+PyMuPDF==1.25.5
+python-docx==1.1.2
+
+# Text Processing & NLP
+langchain==0.3.25
+langchain-text-splitters==0.3.8
+rank-bm25==0.2.2
+
+# Embeddings
+sentence-transformers==4.1.0
+
+# Vector Store
+faiss-cpu==1.15.1
+
+# Database
+SQLAlchemy==2.0.41
+
+# Frontend
+streamlit==1.45.1
+requests==2.32.3
+
+# Utilities
+python-dotenv==1.1.0
+python-magic-bin==0.4.14
+
+# Testing
+pytest==8.4.1
+httpx==0.28.1
+
+# Logging
+structlog==25.4.0
